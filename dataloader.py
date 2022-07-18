@@ -43,7 +43,7 @@ class CustomDataLoader(object):
 
     # @staticmethod
     def collate_fn_train(self, features):
-        """将InputFeatures转换为Tensor
+        """将InputFeatures转换为Tensor,for CarFaultRelation data。
         Args:
             features (List[InputFeatures])
         Returns:
