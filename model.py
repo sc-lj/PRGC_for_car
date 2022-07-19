@@ -69,7 +69,7 @@ class BertForRE(BertPreTrainedModel):
         # global correspondence
         self.global_corres = MultiNonLinearClassifier(
             config.hidden_size * 2, 1, params.drop_prob)
-        # relation judgement
+        # relation judgement 预测关系
         self.rel_judgement = MultiNonLinearClassifier(
             config.hidden_size, params.rel_num, params.drop_prob)
         self.rel_embedding = nn.Embedding(params.rel_num, config.hidden_size)
@@ -116,37 +116,39 @@ class BertForRE(BertPreTrainedModel):
         sequence_output = outputs[0]
         bs, seq_len, h = sequence_output.size()
 
-        if ensure_rel:
-            # (bs, h)
-            h_k_avg = self.masked_avgpool(sequence_output, attention_mask)
-            # (bs, rel_num)
-            rel_pred = self.rel_judgement(h_k_avg)
+        # if ensure_rel:
+        # (bs, h)
+        h_k_avg = self.masked_avgpool(sequence_output, attention_mask)
+        # (bs, rel_num) 预测关系
+        rel_pred = self.rel_judgement(h_k_avg)
 
         # before fuse relation representation
-        if ensure_corres:
-            # for every position $i$ in sequence, should concate $j$ to predict.
-            sub_extend = sequence_output.unsqueeze(
-                2).expand(-1, -1, seq_len, -1)  # (bs, s, s, h)
-            obj_extend = sequence_output.unsqueeze(
-                1).expand(-1, seq_len, -1, -1)  # (bs, s, s, h)
-            # batch x seq_len x seq_len x 2*hidden
-            corres_pred = torch.cat([sub_extend, obj_extend], 3)
-            # (bs, seq_len, seq_len)
-            corres_pred = self.global_corres(corres_pred).squeeze(-1)
-            mask_tmp1 = attention_mask.unsqueeze(-1)
-            mask_tmp2 = attention_mask.unsqueeze(1)
-            corres_mask = mask_tmp1 * mask_tmp2
+        # if ensure_corres:
+        # 预测subject和object的head的相关性
+        # for every position $i$ in sequence, should concate $j$ to predict.
+        sub_extend = sequence_output.unsqueeze(2).expand(-1, -1, seq_len, -1)  # (bs, s, s, h)
+        obj_extend = sequence_output.unsqueeze(1).expand(-1, seq_len, -1, -1)  # (bs, s, s, h)
+        # batch x seq_len x seq_len x 2*hidden
+        corres_pred = torch.cat([sub_extend, obj_extend], 3)
+        # (bs, seq_len, seq_len)
+        corres_pred = self.global_corres(corres_pred).squeeze(-1)
+        # (bs,seq_len,1)
+        mask_tmp1 = attention_mask.unsqueeze(-1)
+        # (bs,1,seq_len)
+        mask_tmp2 = attention_mask.unsqueeze(1)
+        # (bs,seq_len,seq_len)
+        corres_mask = mask_tmp1 * mask_tmp2
 
         # relation predict and data construction in inference stage
         xi, pred_rels = None, None
         if ensure_rel and seq_tags is None:
-            # (bs, rel_num)
+            # (bs, rel_num)，根据预测，文本有哪些关系
             rel_pred_onehot = torch.where(torch.sigmoid(rel_pred) > rel_threshold,
                                           torch.ones(rel_pred.size(),
                                                      device=rel_pred.device),
                                           torch.zeros(rel_pred.size(), device=rel_pred.device))
 
-            # if potential relation is null
+            # if potential relation is null ，针对文本中没有预测出关系
             for idx, sample in enumerate(rel_pred_onehot):
                 if 1 not in sample:
                     # (rel_num,)
@@ -187,6 +189,7 @@ class BertForRE(BertPreTrainedModel):
         # (bs/sum(x_i), h)
         rel_emb = self.rel_embedding(potential_rels)
 
+        # 将关系embedding带入模型，预测subject和object
         # relation embedding vector fusion
         rel_emb = rel_emb.unsqueeze(1).expand(-1, seq_len, h)
         if ex_params['emb_fusion'] == 'concat':

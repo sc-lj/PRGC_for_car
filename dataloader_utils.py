@@ -135,7 +135,7 @@ def read_examples_v2(data_dir, data_sign, rel2idx):
                 en_pair_list.append([triple["subject"], triple["object"]["@value"]])
                 pair_type_list.append([triple["subject_type"], triple["object_type"]["@value"]])
                 re_list.append(rel2idx[triple["predicate"]])
-                rel2ens[rel2idx[triple["predicate"]]].append((triple["subject"], triple["object"]["@value"]))
+                rel2ens[rel2idx[triple["predicate"]]].append([(triple["subject"], triple["object"]["@value"]),(triple["subject_type"], triple["object_type"]["@value"])])
             example = InputExample(
                 text=text, en_pair_list=en_pair_list, re_list=re_list, rel2ens=rel2ens,pair_type_list=pair_type_list)
             examples.append(example)
@@ -362,10 +362,11 @@ def convert_v2(example: InputExample, max_text_len: int, tokenizer, rel2idx, dat
             # init
             tags_sub = max_text_len * [Label2IdxSub['O']]
             tags_obj = max_text_len * [Label2IdxSub['O']]
-            for en in en_ll:
+            for en,en_type in en_ll:
                 # get sub and obj head
                 sub_head, obj_head, sub, obj = _get_so_head(
                     en, tokenizer, text_tokens)
+                sub_type,obj_type = en_type
                 if sub_head != -1 and obj_head != -1:
                     if sub_head + len(sub) <= max_text_len:
                         tags_sub[sub_head] = Label2IdxSub['B-H']
